@@ -1,84 +1,45 @@
-const { ApolloServer, gql } = require("apollo-server");
+const { ApolloServer } = require("apollo-server");
 const { GraphQLDateTime } = require("graphql-iso-date");
 const { firestore } = require("./db/firestore");
-import { NewRoom, newRoomToObject } from "./db/docObjects/room";
+import typeDefs from "./typeDef/index";
+import Mutation from "./mutations";
+import Subscription from "./subscriptions";
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
 // your data.
 
-const typeDefs = gql`
-    # Define custom scalar
-    scalar DateTime
-
-    # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
-
-    # This "Book" type defines the queryable fields for every book in our data source.
-    type Room {
-        _id: ID
-        owner: String
-        roomId: String
-        roomIdShort: String
-        roomStatus: String
-        roomURL: String
-        winner: String
-        numberOfPlayers: Int
-        openDate: DateTime
-        closeDate: DateTime
-    }
-
-    type Query {
-        rooms: [Room]
-    }
-
-    type Mutation {
-        createRoom(owner: String!): NewRoom
-    }
-`;
-
 const resolvers = {
+    DateTime: GraphQLDateTime,
     Query: {
         rooms: async () => {
             const response = await firestore.collection("rooms").get();
             return response.docs.map((room) => {
                 const parsedRoom = room.data();
-                parsedRoom.openDate = room.data().openDate.toDate();
-                parsedRoom.closeDate = room.data().closeDate.toDate();
+                if (room.data().openDate) {
+                    parsedRoom.openDate = new Date(room.data().openDate);
+                }
+                if (room.data().closeDate) {
+                    parsedRoom.closeDate = new Date(room.data().closeDate);
+                }
                 return parsedRoom;
             });
         },
     },
-    DateTime: GraphQLDateTime,
-    Mutation: {
-        createRoom: async (_, { owner }) => {
-            let roomRef = await firestore.collection("rooms").doc();
-            const roomId = roomRef.id;
-            const roomObject = new NewRoom(owner, roomId);
-            return await roomRef
-                .set(newRoomToObject(roomObject))
-                .then(async () => {
-                    return await roomRef
-                        .get()
-                        .then((doc) => {
-                            if (!doc.exists) {
-                                console.log("No such document!");
-                            } else {
-                                console.log("Document data:", doc.data());
-                                return {
-                                    roomIdShort: roomdoc.data().roomIdShort,
-                                    roomURL: roomdoc.data().roomURL,
-                                };
-                            }
-                        })
-                        .catch((err) => {
-                            console.log("Error getting document", err);
-                        });
-                });
-        },
-    },
+    Mutation,
+    Subscription,
 };
+
 const server = new ApolloServer({
     typeDefs,
     resolvers,
+    subscriptions: {
+        onConnect: (connectionParams, webSocket, context) => {
+            console.log("connect...");
+        },
+        onDisconnect: (webSocket, context) => {
+            console.log("disconnect...");
+        },
+    },
 });
 
 // The `listen` method launches a web server.
